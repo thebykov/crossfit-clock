@@ -1,0 +1,679 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Class Hour Clock</title>
+<meta name="description" content="Plan and run a 60-minute CrossFit class: brief, warm-ups, Part A, transition, Part B.">
+<meta name="theme-color" content="#0f1113">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Class Clock">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<style>
+@font-face{font-family:"Big Shoulders Display";font-weight:800;font-display:swap;src:url(fonts/big-shoulders-display-latin-800-normal.woff2) format("woff2")}
+@font-face{font-family:"Archivo";font-weight:400;font-display:swap;src:url(fonts/archivo-latin-400-normal.woff2) format("woff2")}
+@font-face{font-family:"Archivo";font-weight:600;font-display:swap;src:url(fonts/archivo-latin-600-normal.woff2) format("woff2")}
+@font-face{font-family:"Archivo";font-weight:700;font-display:swap;src:url(fonts/archivo-latin-700-normal.woff2) format("woff2")}
+
+/* Layout: plan view is one narrow column; run view is a competition clock that splits into clock | info side by side in landscape. Phases wear bumper-plate colors. */
+:root{
+  --bg:#eceef1; --surface:#ffffff; --ink:#15181c; --muted:#5b626b; --line:#d3d8de; --soft:#e2e6ea;
+  --p-grey:#7d868f; --p-green:#1d8749; --p-red:#d22f2a; --p-yellow:#d9a20b; --p-blue:#1e5cbc; --p-buffer:#a9b1ba;
+  --good:#1d8749; --warn:#c77700; --bad:#d22f2a;
+  --display:"Big Shoulders Display","Avenir Next Condensed","Arial Narrow",Impact,sans-serif;
+  --body:"Archivo",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --gutter-l:max(16px,env(safe-area-inset-left,0px)); --gutter-r:max(16px,env(safe-area-inset-right,0px));
+}
+@media (prefers-color-scheme: dark){:root{
+  --bg:#0f1113; --surface:#181b1f; --ink:#eceef1; --muted:#9aa2ab; --line:#2b3036; --soft:#22262b;
+  --p-grey:#8f98a2; --p-green:#2fae64; --p-red:#ef4a42; --p-yellow:#f0b92a; --p-blue:#4a86e6; --p-buffer:#5b636c;
+  --good:#2fae64; --warn:#f0a43a; --bad:#ef4a42; color-scheme:dark }}
+:root{ --p-redw:color-mix(in srgb,var(--p-red) 45%,var(--bg)); }
+
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.45;-webkit-tap-highlight-color:transparent;
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+[hidden]{display:none!important}
+.wrap{max-width:560px;margin:0 auto;padding-left:var(--gutter-l);padding-right:var(--gutter-r);padding-block:20px 40px;display:flex;flex-direction:column;gap:18px}
+h1{font-family:var(--display);font-weight:800;font-size:40px;line-height:1;margin:0;letter-spacing:.01em;text-transform:uppercase}
+h2{font-family:var(--display);font-weight:800;font-size:22px;line-height:1;margin:0;text-transform:uppercase}
+.lede{color:var(--muted);margin:6px 0 0}
+.num{font-variant-numeric:tabular-nums}
+button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation}
+button:focus-visible,input:focus-visible{outline:2px solid var(--p-blue);outline-offset:2px}
+
+/* summary */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:12px}
+.sumtop{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
+.total{font-family:var(--display);font-weight:800;font-size:44px;line-height:.9}
+.total small{font-size:20px;color:var(--muted);font-weight:800}
+.status{font-weight:600;font-size:14px}
+.status.ok{color:var(--good)} .status.over{color:var(--bad)} .status.spare{color:var(--muted)}
+.bar{display:flex;height:22px;border-radius:5px;overflow:hidden;background:var(--soft);position:relative;flex:none}
+.bar span{display:block;height:100%;border-right:2px solid var(--surface)}
+.bar span:last-child{border-right:0}
+.bar .hatch{background:repeating-linear-gradient(45deg,var(--p-buffer) 0 4px,transparent 4px 8px)}
+.bar .now{position:absolute;top:-3px;bottom:-3px;width:3px;background:var(--ink);border-radius:2px;transform:translateX(-1px)}
+.ticks{display:flex;justify-content:space-between;font-size:11px;color:var(--muted)}
+.fix{align-self:flex-start;background:var(--soft);border:1px solid var(--line);border-radius:6px;padding:7px 12px;font-weight:600;font-size:13px}
+
+/* phase rows */
+.rows{display:flex;flex-direction:column;gap:8px}
+.row{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 12px 12px 14px;display:grid;grid-template-columns:6px 1fr auto;gap:12px;align-items:center}
+.row .plate{width:6px;align-self:stretch;border-radius:3px}
+.row .info{min-width:0}
+.row .name{font-family:var(--display);font-weight:800;font-size:22px;text-transform:uppercase;line-height:1}
+.at{font-size:12px;color:var(--muted)}
+.row input[type=text]{width:100%;margin-top:6px;font:inherit;font-size:16px;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 8px}
+.step{display:flex;align-items:center;gap:4px}
+.step button{width:40px;height:40px;border-radius:8px;border:1px solid var(--line);background:var(--soft);font-size:20px;font-weight:600;line-height:1}
+.step output{min-width:58px;text-align:center;font-family:var(--display);font-weight:800;font-size:28px}
+.chips{grid-column:2 / 4;display:flex;gap:6px;flex-wrap:wrap}
+.chips button,.ints button{border:1px solid var(--line);background:var(--soft);border-radius:999px;padding:6px 12px;font-weight:600;font-size:13px}
+.chips button[aria-pressed=true]{background:var(--p-yellow);border-color:var(--p-yellow);color:#15181c}
+.ints{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-top:8px}
+.ints button{padding:5px 10px;font-size:12px}
+.ints button[aria-pressed=true]{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+.toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;font-weight:600}
+.toggle.boxed{background:var(--surface);border:1px dashed var(--line);border-radius:10px;padding:12px 14px}
+.toggle small{display:block;font-weight:400;color:var(--muted);font-size:12px}
+.switch{width:52px;height:30px;border-radius:999px;border:0;background:var(--line);position:relative;flex:none}
+.switch::after{content:"";position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:var(--surface);transition:left .15s}
+.switch[aria-checked=true]{background:var(--p-blue)}
+.switch[aria-checked=true]::after{left:25px}
+.ghost{align-self:flex-start;background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:8px 14px;font-weight:600;font-size:13px}
+.hint{font-size:13px;color:var(--muted);margin:0}
+.go{background:var(--ink);color:var(--bg);border:0;border-radius:12px;padding:16px;font-family:var(--display);font-weight:800;font-size:28px;letter-spacing:.04em;text-transform:uppercase}
+
+/* run view */
+.runv{max-width:560px;margin:0 auto;padding-left:var(--gutter-l);padding-right:var(--gutter-r);padding-block:16px 32px;display:flex;flex-direction:column;gap:16px}
+.clockcol,.infocol{display:flex;flex-direction:column;gap:14px;min-width:0}
+.phasehead{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.badge{font-family:var(--display);font-weight:800;font-size:26px;text-transform:uppercase;color:#fff;padding:4px 12px;border-radius:6px;line-height:1.1}
+.badge.dark{color:#15181c}
+.phasesub{color:var(--muted);font-weight:600;min-width:0}
+.big{font-family:var(--display);font-weight:800;font-size:min(46vw,30vh,260px);line-height:.85;text-align:center;white-space:nowrap;margin:4px 0}
+.big.over{color:var(--bad)}
+.big.paused{opacity:.45}
+.rounds{display:flex;flex-direction:column;gap:8px;align-items:center;text-align:center}
+.rounds .rl{font-family:var(--display);font-weight:800;font-size:36px;text-transform:uppercase;line-height:1}
+.rounds .rs{color:var(--muted);font-size:14px}
+.dots{display:flex;gap:5px;width:100%;max-width:440px}
+.dots i{flex:1;height:14px;border-radius:3px;background:var(--soft);border:1px solid var(--line)}
+.dots i.done{background:var(--dc);border-color:var(--dc)}
+.dots i.cur{border:2px solid var(--dc);background:color-mix(in srgb,var(--dc) 25%,var(--surface))}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px;min-width:0}
+.stat b{display:block;font-family:var(--display);font-weight:800;font-size:28px;line-height:1}
+.stat span{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600}
+.pace{border-radius:10px;padding:10px 14px;font-weight:700;text-align:center}
+.pace.ok{background:color-mix(in srgb,var(--good) 16%,var(--surface));color:var(--good)}
+.pace.behind{background:color-mix(in srgb,var(--bad) 16%,var(--surface));color:var(--bad)}
+.pace.ahead{background:color-mix(in srgb,var(--warn) 16%,var(--surface));color:var(--warn)}
+.next{color:var(--muted);font-size:14px;text-align:center}
+.controls{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.controls button{border-radius:12px;padding:16px 10px;font-family:var(--display);font-weight:800;font-size:22px;text-transform:uppercase;letter-spacing:.03em;border:1px solid var(--line);background:var(--surface)}
+.controls .primary{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.controls .wide{grid-column:1 / 3}
+.controls .end{color:var(--bad);font-size:16px;padding:12px}
+.controls button:disabled{opacity:.4}
+.list{display:flex;flex-direction:column;gap:2px;font-size:14px}
+.li{display:grid;grid-template-columns:10px 1fr auto;gap:10px;align-items:center;padding:6px 4px;border-radius:6px}
+.li i{width:10px;height:10px;border-radius:50%}
+.li.done{color:var(--muted);text-decoration:line-through}
+.li.cur{background:var(--surface);font-weight:700}
+.opts{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--muted);align-items:center}
+.opts label{display:flex;gap:6px;align-items:center}
+.soundbar{background:var(--p-yellow);color:#15181c;border:0;border-radius:10px;padding:12px;font-weight:700}
+
+/* Landscape phone or tablet: clock left, info right, no page scroll */
+@media (orientation: landscape) and (min-width: 560px){
+  body{overflow:hidden}
+  .runv{max-width:none;height:100%;display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:20px;padding-block:12px}
+  .clockcol{justify-content:center}
+  .big{font-size:min(25vw,50vh)}
+  .infocol{overflow-y:auto;padding-bottom:12px;-webkit-overflow-scrolling:touch}
+  .controls button{padding:12px 8px;font-size:20px}
+  .stat b{font-size:24px}
+}
+@media (orientation: landscape) and (max-height: 500px){
+  .badge{font-size:22px}
+  .rounds .rl{font-size:28px}
+  .big{font-size:min(25vw,46vh)}
+}
+@media (prefers-reduced-motion: reduce){.switch::after{transition:none}}
+</style>
+</head>
+<body>
+
+<div class="wrap" id="planView">
+  <header>
+    <h1>Class Hour Clock</h1>
+    <p class="lede">Plan the 60 minutes, then hit start. Part A and Part B always get their full time. The transition covers recovery and the Part B warm-up, and it absorbs a long or short class warm-up.</p>
+  </header>
+
+  <section class="card" aria-label="Hour summary">
+    <div class="sumtop">
+      <div class="total num" id="sumTotal">60:00 <small>/ 60:00</small></div>
+      <div class="status" id="sumStatus"></div>
+    </div>
+    <div class="bar" id="planBar"></div>
+    <div class="ticks num"><span>0</span><span>15</span><span>30</span><span>45</span><span>60</span></div>
+    <button class="fix" id="fixBtn" hidden></button>
+  </section>
+
+  <div class="rows" id="rows"></div>
+
+  <section class="card" aria-label="Alerts">
+    <h2>Alerts</h2>
+    <div class="toggle"><span>Beeps<small>3-2-1 before each phase and round, and a long beep to start. Keeps playing with the screen locked.</small></span><button class="switch" id="soundSw" role="switch" aria-checked="true" aria-label="Beeps"></button></div>
+    <div class="toggle"><span>Notifications<small id="notifNote">A banner when a new phase starts while the app is in the background.</small></span><button class="switch" id="notifSw" role="switch" aria-checked="false" aria-label="Notifications"></button></div>
+    <button class="ghost" id="testBtn">Test beep</button>
+    <p class="hint" id="installHint" hidden></p>
+  </section>
+
+  <button class="go" id="startBtn">Start class</button>
+</div>
+
+<div class="runv" id="runView" hidden>
+  <div class="clockcol">
+    <div class="phasehead"><span class="badge" id="rBadge">Brief</span><span class="phasesub" id="rSub"></span></div>
+    <div class="big num" id="rBig">5:00</div>
+    <div class="rounds" id="rRounds" hidden>
+      <div class="rl num" id="rRoundLbl"></div>
+      <div class="dots" id="rDots"></div>
+      <div class="rs num"><span id="rRoundLeft"></span> · <span id="rRoundPh"></span></div>
+    </div>
+  </div>
+  <div class="infocol">
+    <button class="soundbar" id="soundBar" hidden>Tap to turn the beeps back on</button>
+    <div class="pace" id="rPace">On time</div>
+    <div class="stats">
+      <div class="stat"><b class="num" id="rElapsed">0:00</b><span>Elapsed</span></div>
+      <div class="stat"><b class="num" id="rLeft">60:00</b><span>Hour left</span></div>
+      <div class="stat"><b class="num" id="rEnds">--</b><span>Ends at</span></div>
+    </div>
+    <div class="next" id="rNext"></div>
+    <div class="controls">
+      <button class="primary" id="pauseBtn">Pause</button>
+      <button id="nextBtn">Next phase</button>
+      <button class="end wide" id="endBtn">End class</button>
+    </div>
+    <div class="bar" id="runBar"></div>
+    <div class="list" id="rList"></div>
+    <div class="opts">
+      <span>Brief and class warm-up wait for you to tap Next. Everything after runs on the clock.</span>
+      <label><input type="checkbox" id="soundChk" checked> Beeps</label>
+    </div>
+  </div>
+</div>
+
+<audio id="track" preload="auto" playsinline></audio>
+
+<script>
+const HOUR = 3600;
+const DEF = {brief:300, warm:600, aw:300, a:900, aInt:0, trans:420, b:1080, bInt:0, two:true, aName:"Strength", bName:"Metcon"};
+const store = {
+  get(k){ try{ return JSON.parse(localStorage.getItem(k)); }catch(e){ return null; } },
+  set(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} },
+  del(k){ try{ localStorage.removeItem(k); }catch(e){} }
+};
+let plan = Object.assign({}, DEF, store.get("chc-plan") || {});
+delete plan.bw;
+const opts = Object.assign({sound:true, notify:false}, store.get("chc-opts")||{});
+const $ = id => document.getElementById(id);
+const esc = s => String(s||"").replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function fmt(sec){
+  const neg = sec < 0; sec = Math.abs(Math.round(sec));
+  const m = Math.floor(sec/60), s = sec%60;
+  return (neg?"-":"") + m + ":" + String(s).padStart(2,"0");
+}
+const clock = d => d.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"});
+
+function buildPhases(p){
+  const out = [
+    {k:"brief", label:"Brief", sub:"Whiteboard, demo, cues", dur:p.brief, c:"--p-grey"},
+    {k:"warm", label:"Class warm-up", sub:"General warm-up", dur:p.warm, c:"--p-green"},
+    {k:"aw", label:p.two?"A warm-up":"Workout warm-up", sub:"Bar setup and warm-up sets", dur:p.aw, c:"--p-redw"},
+    {k:"a", label:p.two?"Part A":"Workout", sub:p.aName||"", dur:p.a, c:"--p-red", int:p.aInt||0}
+  ];
+  if(p.two){
+    out.push({k:"trans", label:"Transition", sub:"Recover, put weights away, set up and warm up for Part B", dur:p.trans, c:"--p-yellow"});
+    out.push({k:"b", label:"Part B", sub:p.bName||"", dur:p.b, c:"--p-blue", int:p.bInt||0});
+  }
+  const used = out.reduce((s,x)=>s+x.dur,0);
+  if(used < HOUR) out.push({k:"buf", label:"Wrap-up", sub:"Buffer, cool-down, cleanup", dur:HOUR-used, c:"--p-buffer", buffer:true});
+  return out;
+}
+function drawBar(el, phases, nowSec){
+  const total = Math.max(HOUR, phases.reduce((s,x)=>s+x.dur,0));
+  el.innerHTML = phases.map(x=>`<span class="${x.buffer?"hatch":""}" style="width:${x.dur/total*100}%;${x.buffer?"":"background:var("+x.c+")"}"></span>`).join("")
+    + (nowSec!=null ? `<div class="now" style="left:${Math.min(100,nowSec/total*100)}%"></div>` : "");
+}
+
+/* ---------- plan view ---------- */
+const TRANS = [180,300,420,600,720];
+const INTS = [0,60,90,120,150,180,240,300];
+function save(){ store.set("chc-plan", plan); }
+function intChips(key, v, dur){
+  v = v||0;
+  const n = v ? Math.floor(dur/v) : 0, extra = v ? dur - n*v : 0;
+  return `<div class="ints"><span class="at">Every</span>${INTS.map(s=>`<button data-int="${key}" data-v="${s}" aria-pressed="${v===s}">${s?fmt(s):"Off"}</button>`).join("")}</div>`
+    + (v ? `<div class="at num" style="margin-top:4px;font-weight:600;color:var(--ink)">${n} rounds of ${fmt(v)}${extra?` + ${fmt(extra)} extra`:""} · +/− adds or removes a round</div>` : "");
+}
+
+function renderPlan(){
+  const ph = buildPhases(plan);
+  const starts = {}; let t=0; ph.forEach(x=>{ starts[x.k]=t; t+=x.dur; });
+  const used = ph.filter(x=>!x.buffer).reduce((s,x)=>s+x.dur,0);
+
+  $("sumTotal").innerHTML = `${fmt(used)} <small>/ 60:00</small>`;
+  const st = $("sumStatus"), fix = $("fixBtn"), diff = HOUR-used;
+  if(diff===0){ st.className="status ok"; st.textContent="Fills the hour exactly"; fix.hidden=true; }
+  else if(diff>0){ st.className="status spare"; st.textContent=`${fmt(diff)} spare as wrap-up`; fix.hidden=false; fix.textContent=`Add ${fmt(diff)} to class warm-up`; }
+  else { st.className="status over"; st.textContent=`${fmt(-diff)} over the hour`; fix.hidden = plan.warm + diff < 60; fix.textContent=`Trim ${fmt(-diff)} from class warm-up`; }
+  drawBar($("planBar"), ph);
+
+  const row = (k, label, color, val, extra="") => `
+    <div class="row">
+      <div class="plate" style="background:var(${color})"></div>
+      <div class="info"><div class="name">${label}</div><div class="at num">Starts at ${fmt(starts[k]||0)}</div>${extra}</div>
+      <div class="step">
+        <button aria-label="Less ${label}" data-k="${k}" data-d="-60">−</button>
+        <output class="num">${val%60 ? fmt(val) : Math.round(val/60)+'<span style="font-size:14px;color:var(--muted)">m</span>'}</output>
+        <button aria-label="More ${label}" data-k="${k}" data-d="60">+</button>
+      </div>
+    </div>`;
+  let h = row("brief","Brief","--p-grey",plan.brief);
+  h += row("warm","Class warm-up","--p-green",plan.warm);
+  h += row("aw", plan.two?"A warm-up":"Workout warm-up","--p-redw",plan.aw, `<div class="at">Bar setup and warm-up sets</div>`);
+  h += row("a", plan.two?"Part A":"Workout","--p-red",plan.a, `<input type="text" id="aName" value="${esc(plan.aName)}" placeholder="e.g. Back squat 5x3" aria-label="Part A name">${intChips("aInt",plan.aInt,plan.a)}`);
+  h += `<div class="toggle boxed"><span>Second part (Part B)</span><button class="switch" id="twoSw" role="switch" aria-checked="${plan.two}" aria-label="Second part"></button></div>`;
+  if(plan.two){
+    h += `<div class="row">
+      <div class="plate" style="background:var(--p-yellow)"></div>
+      <div class="info"><div class="name">Transition</div><div class="at num">Starts at ${fmt(starts.trans)} · recover, clean up, set up and warm up for Part B · flexes if the class warm-up runs long or short</div></div>
+      <div class="step">
+        <button aria-label="Shorter transition" data-k="trans" data-d="-30">−</button>
+        <output class="num">${fmt(plan.trans)}</output>
+        <button aria-label="Longer transition" data-k="trans" data-d="30">+</button>
+      </div>
+      <div class="chips">${TRANS.map(s=>`<button data-trans="${s}" aria-pressed="${plan.trans===s}">${fmt(s)}</button>`).join("")}</div>
+    </div>`;
+    h += row("b","Part B","--p-blue",plan.b, `<input type="text" id="bName" value="${esc(plan.bName)}" placeholder="e.g. 12 min AMRAP" aria-label="Part B name">${intChips("bInt",plan.bInt,plan.b)}`);
+  }
+  $("rows").innerHTML = h;
+}
+
+$("rows").addEventListener("click", e=>{
+  const b = e.target.closest("button"); if(!b) return;
+  if(b.dataset.k){
+    const k=b.dataset.k, iv=(k==="a"&&plan.aInt)||(k==="b"&&plan.bInt)||0;
+    const d = iv ? Math.sign(Number(b.dataset.d))*iv : Number(b.dataset.d);
+    plan[k] = Math.max(iv||60, Math.min(HOUR, plan[k] + d));
+  }
+  else if(b.dataset.int){
+    const k=b.dataset.int, v=Number(b.dataset.v), p=k[0];
+    plan[k]=v; if(v) plan[p]=Math.max(v, Math.round(plan[p]/v)*v);
+  }
+  else if(b.dataset.trans){ plan.trans = Number(b.dataset.trans); }
+  else if(b.id==="twoSw"){ plan.two = !plan.two; }
+  else return;
+  save(); renderPlan();
+});
+$("rows").addEventListener("input", e=>{
+  if(e.target.id==="aName"){ plan.aName=e.target.value; save(); }
+  if(e.target.id==="bName"){ plan.bName=e.target.value; save(); }
+});
+$("fixBtn").addEventListener("click", ()=>{
+  const used = buildPhases(plan).filter(x=>!x.buffer).reduce((s,x)=>s+x.dur,0);
+  plan.warm = Math.max(60, plan.warm + (HOUR-used)); save(); renderPlan();
+});
+
+/* ---------- alerts settings ---------- */
+const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform==="MacIntel" && navigator.maxTouchPoints>1);
+function saveOpts(){ store.set("chc-opts", opts); }
+function renderAlerts(){
+  $("soundSw").setAttribute("aria-checked", opts.sound);
+  $("soundChk").checked = opts.sound;
+  const can = "Notification" in window && "serviceWorker" in navigator;
+  const granted = can && Notification.permission === "granted";
+  if(!granted && opts.notify){ opts.notify = false; saveOpts(); }
+  $("notifSw").setAttribute("aria-checked", opts.notify);
+  const note = $("notifNote");
+  if(!can) note.textContent = isIOS && !standalone ? "On iPhone, add the app to your Home Screen first, then turn this on." : "This browser doesn't support notifications.";
+  else if(Notification.permission === "denied") note.textContent = "Notifications are blocked. Allow them for this app in your phone's settings.";
+  else note.textContent = "A banner when a new phase starts while the app is in the background.";
+  const hint = $("installHint");
+  if(!standalone){
+    hint.hidden = false;
+    hint.textContent = isIOS ? "Install: tap the Share button in Safari, then Add to Home Screen."
+                             : "Install: open the browser menu and choose Install app or Add to Home screen.";
+  } else hint.hidden = true;
+}
+$("soundSw").onclick = ()=>{ opts.sound = !opts.sound; saveOpts(); renderAlerts(); };
+$("soundChk").onchange = e=>{ opts.sound = e.target.checked; saveOpts(); renderAlerts(); if(run){ unlockAudio(); scheduleTrack(); } };
+$("notifSw").onclick = async ()=>{
+  if(opts.notify){ opts.notify=false; saveOpts(); renderAlerts(); return; }
+  if(!("Notification" in window)){ renderAlerts(); return; }
+  let p = Notification.permission;
+  if(p === "default"){ try{ p = await Notification.requestPermission(); }catch(e){} }
+  opts.notify = p === "granted"; saveOpts(); renderAlerts();
+  if(opts.notify) notify("Notifications are on", "You'll get a banner when each phase starts.", true);
+};
+$("testBtn").onclick = ()=>{ unlockAudio(); playEvents([{t:0,k:"tick"},{t:1,k:"tick"},{t:2,k:"tick"},{t:3,k:"go"}], 5); };
+
+/* ---------- sound ----------
+   Beeps are rendered into one audio file that plays from now to the end of what is known.
+   A playing <audio> element keeps going when the screen locks or the app is in the
+   background, which a JavaScript timer cannot do. */
+const SR = 4000;
+const TONES = {tick:{per:6, dur:.16}, go:{per:4, dur:.7}, end:{per:4, dur:.35, n:3}};
+let track = $("track"), trackURL = null, trackOn = false, audioUnlocked = false;
+
+function renderWav(events, lenSec){
+  const n = Math.ceil(lenSec*SR), buf = new Uint8Array(44+n), v = new DataView(buf.buffer);
+  const str = (o,s)=>{ for(let i=0;i<s.length;i++) buf[o+i]=s.charCodeAt(i); };
+  str(0,"RIFF"); v.setUint32(4,36+n,true); str(8,"WAVE"); str(12,"fmt ");
+  v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true);
+  v.setUint32(24,SR,true); v.setUint32(28,SR,true); v.setUint16(32,1,true); v.setUint16(34,8,true);
+  str(36,"data"); v.setUint32(40,n,true);
+  buf.fill(128, 44);
+  for(const ev of events){
+    const T = TONES[ev.k], reps = T.n||1;
+    for(let r=0;r<reps;r++){
+      const s0 = Math.round((ev.t + r*(T.dur+.12))*SR), len = Math.round(T.dur*SR), half = T.per/2;
+      for(let i=0;i<len && s0+i<n;i++){
+        if(s0+i < 0) continue;
+        const env = Math.min(1, i/40, (len-i)/40);
+        buf[44+s0+i] = 128 + ((Math.floor(i/half)%2) ? 1 : -1) * Math.round(110*env);
+      }
+    }
+  }
+  return new Blob([buf], {type:"audio/wav"});
+}
+function playEvents(events, lenSec){
+  const url = URL.createObjectURL(renderWav(events, Math.max(1,lenSec)));
+  track.src = url; track.currentTime = 0;
+  const p = track.play();
+  if(trackURL) URL.revokeObjectURL(trackURL);
+  trackURL = url;
+  return p ? p.then(()=>{ trackOn = true; audioUnlocked = true; updateSoundBar(); return true; })
+              .catch(()=>{ trackOn = false; updateSoundBar(); return false; }) : Promise.resolve(true);
+}
+function stopTrack(){ try{ track.pause(); }catch(e){} trackOn = false; }
+function unlockAudio(){ initAC(); }
+track.addEventListener("ended", ()=>{ trackOn = false; });
+track.addEventListener("pause", ()=>{ if(run && !run.pausedAt && !track.ended) { trackOn = false; updateSoundBar(); } });
+
+// WebAudio fallback when the track can't play
+let ac = null;
+function initAC(){ try{ ac = ac || new (window.AudioContext||window.webkitAudioContext)(); ac.resume(); }catch(e){} }
+function webBeep(k){
+  if(!opts.sound || !ac) return;
+  const T = TONES[k], f = SR/T.per;
+  for(let r=0;r<(T.n||1);r++){
+    const t = ac.currentTime + r*(T.dur+.12);
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type="square"; o.frequency.value=f;
+    g.gain.setValueAtTime(.0001,t); g.gain.exponentialRampToValueAtTime(.25,t+.01); g.gain.exponentialRampToValueAtTime(.0001,t+T.dur);
+    o.connect(g).connect(ac.destination); o.start(t); o.stop(t+T.dur+.02);
+  }
+}
+
+/* ---------- run ---------- */
+let run = store.get("chc-run");
+let timer = null, wake = null;
+const MIN_T = 60000;
+const TIMED = {aw:1, a:1, trans:1, b:1, buf:1};
+
+function elapsedMs(){
+  const now = Date.now();
+  return now - run.startedAt - run.pausedTotal - (run.pausedAt ? now - run.pausedAt : 0);
+}
+function persist(){ store.set("chc-run", run); }
+async function lockScreen(){ try{ if("wakeLock" in navigator && !document.hidden) wake = await navigator.wakeLock.request("screen"); }catch(e){} }
+
+/* Effective durations: Part A and B are fixed. The transition flexes so Part B starts
+   on its planned minute, and the wrap-up takes whatever is left of the hour. */
+function effective(e){
+  const P = run.phases, D = P.map(x=>x.dur*1000), S = [], plan0 = [];
+  let t=0; P.forEach((x,i)=>{ plan0[i]=t; t+=D[i]; });
+  for(let i=0;i<P.length;i++){
+    if(i < run.idx){ D[i] = run.act[i] ?? D[i]; continue; }
+    if(i === run.idx) S[i] = run.phStart;
+    else { const p=i-1; S[i] = S[p] + (p===run.idx ? Math.max(D[p], e-run.phStart) : D[p]); }
+    if(P[i].k==="trans") D[i] = Math.max(MIN_T, plan0[i+1] - S[i]);
+    if(P[i].buffer) D[i] = Math.max(0, HOUR*1000 - S[i]);
+  }
+  return {D, S, plan0};
+}
+function advance(at){
+  run.act[run.idx] = at - run.phStart;
+  run.phStart = at; run.idx++; persist();
+}
+
+/* Every beep from now until the end of what's known. Brief and class warm-up end
+   when you tap Next, so the track stops at the planned end of a manual phase. */
+function upcomingEvents(e){
+  const P = run.phases, {D, S} = effective(e), ev = [];
+  const add = (atMs, countdown, k="go")=>{
+    if(countdown) for(let s=3;s>=1;s--) ev.push({t:(atMs - s*1000 - e)/1000, k:"tick"});
+    ev.push({t:(atMs - e)/1000, k});
+  };
+  let open = true;
+  for(let i=run.idx;i<P.length;i++){
+    const ph = P[i], start = S[i], end = start + D[i];
+    if(!TIMED[ph.k]){ if(end > e) add(end, true); open = false; break; }
+    if(ph.int){
+      const iv = ph.int*1000, n = Math.floor(ph.dur/ph.int);
+      for(let r=1;r<n;r++) add(start + r*iv, true);
+    }
+    if(!ph.buffer && i < P.length-1) add(end, true);
+  }
+  if(open) add(Math.max(HOUR*1000, S[P.length-1] + D[P.length-1]), true, "end");
+  return ev.filter(x=>x.t > 0.05);
+}
+function scheduleTrack(extra=[]){
+  if(!run || run.pausedAt){ stopTrack(); return; }
+  const e = elapsedMs();
+  const ev = opts.sound ? upcomingEvents(e).concat(extra) : [];
+  const last = ev.length ? Math.max(...ev.map(x=>x.t)) : 0;
+  // keep a silent tail so the phone treats the app as playing until the hour is up
+  const hourLeft = Math.max(0, (HOUR*1000 - e)/1000);
+  playEvents(ev, Math.min(Math.max(last + 3, hourLeft + 5, 30), 75*60));
+}
+function updateSoundBar(){ $("soundBar").hidden = !(run && !run.pausedAt && !trackOn && document.visibilityState==="visible"); }
+$("soundBar").onclick = ()=>{ unlockAudio(); scheduleTrack(); };
+
+/* notifications + lock screen */
+async function notify(title, body, force){
+  if(!opts.notify || !("Notification" in window) || Notification.permission!=="granted") return;
+  if(!force && document.visibilityState === "visible") return;
+  try{
+    const reg = await navigator.serviceWorker.ready;
+    await reg.showNotification(title, {body, tag:"chc-phase", renotify:true, icon:"icons/icon-192.png", badge:"icons/icon-192.png", silent:false});
+  }catch(e){ try{ new Notification(title,{body, tag:"chc-phase", icon:"icons/icon-192.png"}); }catch(_){} }
+}
+let lastMeta = "";
+function mediaInfo(title, artist){
+  if(!("mediaSession" in navigator)) return;
+  const k = title+"|"+artist; if(k===lastMeta) return; lastMeta = k;
+  try{
+    navigator.mediaSession.metadata = new MediaMetadata({title, artist, album:"Class Hour Clock",
+      artwork:[{src:"icons/icon-512.png", sizes:"512x512", type:"image/png"}]});
+  }catch(e){}
+}
+if("mediaSession" in navigator){
+  try{
+    navigator.mediaSession.setActionHandler("pause", ()=>{ if(run && !run.pausedAt) togglePause(); });
+    navigator.mediaSession.setActionHandler("play", ()=>{ if(run && run.pausedAt) togglePause(); });
+  }catch(e){}
+}
+
+$("startBtn").addEventListener("click", ()=>{
+  unlockAudio(); lockScreen();
+  run = {phases: buildPhases(plan), startedAt: Date.now(), pausedAt:null, pausedTotal:0, idx:0, phStart:0, beeped:{}, act:[], seen:-1};
+  persist(); showRun();
+  scheduleTrack([{t:0.05,k:"go"}]);
+});
+function togglePause(){
+  unlockAudio();
+  if(run.pausedAt){ run.pausedTotal += Date.now()-run.pausedAt; run.pausedAt=null; persist(); scheduleTrack(); }
+  else { run.pausedAt = Date.now(); persist(); stopTrack(); }
+  tick();
+}
+$("pauseBtn").addEventListener("click", togglePause);
+$("nextBtn").addEventListener("click", ()=>{
+  unlockAudio();
+  if(run.idx < run.phases.length-1){
+    advance(elapsedMs());
+    if(run.pausedAt){ tick(); return; }
+    scheduleTrack([{t:0.05,k:"go"}]); tick();
+  }
+});
+let endArmed = null;
+$("endBtn").addEventListener("click", ()=>{
+  if(!endArmed){ $("endBtn").textContent="Tap again to end class"; endArmed=setTimeout(()=>{ endArmed=null; $("endBtn").textContent="End class"; },3000); return; }
+  clearTimeout(endArmed); endArmed=null; $("endBtn").textContent="End class";
+  run=null; store.del("chc-run"); clearInterval(timer); stopTrack(); try{ wake && wake.release(); }catch(e){}
+  if("mediaSession" in navigator) try{ navigator.mediaSession.metadata = null; }catch(e){}
+  lastMeta = "";
+  $("runView").hidden=true; $("planView").hidden=false; window.scrollTo(0,0); renderPlan(); renderAlerts();
+});
+$("runView").addEventListener("pointerdown", ()=>{ if(run && !run.pausedAt && !trackOn && !audioUnlocked){ unlockAudio(); scheduleTrack(); } });
+
+function showRun(){
+  $("planView").hidden=true; $("runView").hidden=false; window.scrollTo(0,0);
+  clearInterval(timer); timer=setInterval(tick,250); tick();
+}
+document.addEventListener("visibilitychange", ()=>{
+  if(!run) return;
+  if(!document.hidden){ lockScreen(); tick(); updateSoundBar(); }
+});
+
+function tick(){
+  if(!run) return;
+  const P = run.phases, e = elapsedMs(), es = e/1000;
+  run.act = run.act || [];
+  let {D, S, plan0} = effective(e);
+  let ph = P[run.idx], rem = D[run.idx] - (e - run.phStart);
+
+  // timed pieces advance on their own; brief and class warm-up wait for Next
+  while(TIMED[ph.k] && rem<=0 && run.idx < P.length-1){
+    advance(run.phStart + D[run.idx]);
+    ({D, S, plan0} = effective(e));
+    ph = P[run.idx]; rem = D[run.idx] - (e - run.phStart);
+  }
+
+  // fallback beeps only when the background track isn't playing (e.g. sound needs a tap)
+  if(!run.pausedAt && !trackOn && document.visibilityState==="visible"){
+    const remS = Math.ceil(rem/1000), key = run.idx;
+    if(remS>0 && remS<=3 && !run.beeped[key+"-"+remS]){ run.beeped[key+"-"+remS]=1; webBeep("tick"); }
+    if(rem<=0 && !run.beeped[key+"-0"]){ run.beeped[key+"-0"]=1; webBeep("go"); }
+  }
+
+  // phase change notification
+  if(run.seen !== run.idx){
+    if(run.seen != null && run.seen >= 0){
+      const n = ph.int ? ` · ${Math.floor(ph.dur/ph.int)} rounds of ${fmt(ph.int)}` : ` · ${fmt(D[run.idx]/1000)}`;
+      notify(`${ph.label} started`, `${ph.sub ? ph.sub : ""}${n}`.replace(/^ · /,""));
+    }
+    run.seen = run.idx; persist();
+  }
+  if(!TIMED[ph.k] && rem<=0 && !run.beeped["n"+run.idx]){
+    run.beeped["n"+run.idx]=1; persist();
+    notify(`${ph.label} time is up`, "Tap Next when the class is ready to move on.");
+  }
+
+  const badge = $("rBadge");
+  badge.textContent = ph.label; badge.style.background = `var(${ph.c})`;
+  badge.classList.toggle("dark", ["--p-yellow","--p-buffer","--p-redw"].includes(ph.c));
+  $("rSub").textContent = ph.sub;
+
+  const big = $("rBig");
+  big.textContent = rem>=0 ? fmt(Math.ceil(rem/1000)) : "+" + fmt(-rem/1000);
+  big.classList.toggle("over", rem<0);
+  big.classList.toggle("paused", !!run.pausedAt);
+
+  let meta = rem>=0 ? `${fmt(Math.ceil(rem/1000))} left` : `${fmt(-rem/1000)} over`;
+  const rb = $("rRounds");
+  if(ph.int && rem > 0){
+    const iv = ph.int*1000, inPh = Math.max(0, e-run.phStart), n = Math.floor(ph.dur/ph.int);
+    const r = Math.floor(inPh/iv) + 1;
+    rb.style.setProperty("--dc", `var(${ph.c})`);
+    if(r <= n){
+      big.textContent = fmt(Math.ceil((iv - inPh%iv)/1000));
+      $("rRoundLbl").textContent = `Round ${r} of ${n}`;
+      $("rRoundLeft").textContent = n-r ? `${n-r} more after this` : "Last round";
+      meta = `Round ${r} of ${n}`;
+    } else {
+      $("rRoundLbl").textContent = "Extra time";
+      $("rRoundLeft").textContent = `All ${n} rounds done`;
+    }
+    $("rRoundPh").textContent = `${ph.label} ends in ${fmt(Math.ceil(rem/1000))}`;
+    const dk = run.idx+"-"+n+"-"+r;
+    if(rb.dataset.k !== dk){ rb.dataset.k = dk; $("rDots").innerHTML = Array.from({length:n},(_,i)=>`<i class="${i<r-1?"done":i===r-1?"cur":""}"></i>`).join(""); }
+    rb.hidden = false;
+  } else rb.hidden = true;
+
+  $("pauseBtn").textContent = run.pausedAt ? "Resume" : "Pause";
+  $("nextBtn").disabled = run.idx >= P.length-1;
+  $("nextBtn").textContent = TIMED[ph.k] ? "Skip ahead" : "Next phase";
+
+  $("rElapsed").textContent = fmt(Math.floor(es));
+  $("rLeft").textContent = es<=HOUR ? fmt(Math.ceil(HOUR-es)) : "+"+fmt(es-HOUR);
+  const endAt = new Date(Date.now() + (HOUR*1000 - e));
+  $("rEnds").textContent = clock(endAt);
+  mediaInfo(`${ph.label}${ph.sub && ph.int ? " · "+ph.sub : ""}`, `${run.pausedAt ? "Paused · " : ""}${meta} · class ends ${clock(endAt)}`);
+
+  const lastFixed = P.map(x=>x.k).lastIndexOf(P.some(x=>x.k==="b") ? "b" : "a");
+  const fixedEnd = (S[lastFixed] ?? run.phStart) + D[lastFixed] + (run.idx===lastFixed ? Math.max(0, e-run.phStart-D[lastFixed]) : 0);
+  const tIdx = P.findIndex(x=>x.k==="trans");
+  const pace = $("rPace"), late = (fixedEnd - HOUR*1000)/1000;
+  if(run.pausedAt){ pace.className="pace ahead"; pace.textContent="Paused. The hour clock is stopped."; }
+  else if(run.idx > lastFixed){ pace.className = es>HOUR?"pace behind":"pace ok"; pace.textContent = es>HOUR ? `Over the hour by ${fmt(es-HOUR)}` : "Workout done. Wrap it up."; }
+  else if(late > 5){ pace.className="pace behind"; pace.textContent = TIMED[ph.k] ? `Class will run ${fmt(late)} past the hour` : `Running ${fmt(late)} past the hour. Wrap up the warm-up now.`; }
+  else if(tIdx>=0 && run.idx<=tIdx){
+    const planned = P[tIdx].dur*1000, now = D[tIdx], gap = (now-planned)/1000;
+    const bLate = (S[tIdx+1] - plan0[tIdx+1])/1000;
+    if(bLate > 5){ pace.className="pace behind"; pace.textContent=`Transition at 1:00 minimum. Part B starts ${fmt(bLate)} late.`; }
+    else if(gap < -5){ pace.className="pace ahead"; pace.textContent=`Transition cut to ${fmt(now/1000)} (planned ${fmt(planned/1000)})`; }
+    else if(gap > 5){ pace.className="pace ok"; pace.textContent=`Transition stretched to ${fmt(now/1000)} (planned ${fmt(planned/1000)})`; }
+    else { pace.className="pace ok"; pace.textContent=`On time · transition ${fmt(now/1000)}`; }
+  }
+  else {
+    const spare = -late;
+    pace.className = "pace ok";
+    pace.textContent = spare > 5 ? `On track · ${fmt(spare)} left for wrap-up` : "On time";
+  }
+
+  const nx = P[run.idx+1];
+  $("rNext").textContent = nx ? `Next: ${nx.label}${nx.sub?" ("+nx.sub+")":""} · ${fmt(Math.round(D[run.idx+1]/1000))}` : "Last phase of class";
+
+  const effP = P.map((x,i)=>Object.assign({}, x, {dur: D[i]/1000}));
+  drawBar($("runBar"), effP, es);
+  const lk = run.idx+"|"+effP.map(x=>Math.round(x.dur)).join(",");
+  if($("rList").dataset.k !== lk){
+    $("rList").dataset.k = lk;
+    $("rList").innerHTML = effP.map((x,i)=>{ const s = i<=run.idx ? null : S[i]/1000;
+      const cls = i<run.idx?"done":i===run.idx?"cur":"";
+      const flex = x.k==="trans" && i>=run.idx ? " · flex" : "";
+      return `<div class="li ${cls}"><i style="background:var(${x.c})"></i><span>${x.label}${x.sub?` <span style="color:var(--muted);font-weight:400">${esc(x.sub)}</span>`:""}</span><span class="num">${s!=null?"at "+fmt(s)+" · ":""}${fmt(Math.round(x.dur))}${flex}</span></div>`; }).join("");
+  }
+  updateSoundBar();
+}
+
+if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
+renderPlan(); renderAlerts();
+if(run){ showRun(); }
+</script>
+</body>
+</html>
