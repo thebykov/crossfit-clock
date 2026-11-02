@@ -35,7 +35,8 @@
 :root{ --p-redw:color-mix(in srgb,var(--p-red) 45%,var(--bg)); }
 
 *{box-sizing:border-box}
-html,body{margin:0;height:100%}
+html,body{margin:0}
+html{min-height:100%}
 body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.45;-webkit-tap-highlight-color:transparent;
   padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 [hidden]{display:none!important}
@@ -133,8 +134,8 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--p-blue);outline
 
 /* Landscape phone or tablet: clock left, info right, no page scroll */
 @media (orientation: landscape) and (min-width: 560px){
-  body{overflow:hidden}
-  .runv{max-width:none;height:100%;display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:20px;padding-block:12px}
+  body.running{overflow:hidden}
+  .runv{max-width:none;height:calc(100vh - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));height:calc(100dvh - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:20px;padding-block:12px}
   .clockcol{justify-content:center}
   .big{font-size:min(25vw,50vh)}
   .infocol{overflow-y:auto;padding-bottom:12px;-webkit-overflow-scrolling:touch}
@@ -546,12 +547,12 @@ $("endBtn").addEventListener("click", ()=>{
   run=null; store.del("chc-run"); clearInterval(timer); stopTrack(); try{ wake && wake.release(); }catch(e){}
   if("mediaSession" in navigator) try{ navigator.mediaSession.metadata = null; }catch(e){}
   lastMeta = "";
-  $("runView").hidden=true; $("planView").hidden=false; window.scrollTo(0,0); renderPlan(); renderAlerts();
+  $("runView").hidden=true; $("planView").hidden=false; document.body.classList.remove("running"); window.scrollTo(0,0); renderPlan(); renderAlerts();
 });
 $("runView").addEventListener("pointerdown", ()=>{ if(run && !run.pausedAt && !trackOn && !audioUnlocked){ unlockAudio(); scheduleTrack(); } });
 
 function showRun(){
-  $("planView").hidden=true; $("runView").hidden=false; window.scrollTo(0,0);
+  $("planView").hidden=true; $("runView").hidden=false; document.body.classList.add("running"); window.scrollTo(0,0);
   clearInterval(timer); timer=setInterval(tick,250); tick();
 }
 document.addEventListener("visibilitychange", ()=>{
