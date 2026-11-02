@@ -147,6 +147,27 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--p-blue);outline
   .rounds .rl{font-size:28px}
   .big{font-size:min(25vw,46vh)}
 }
+
+/* install sheet */
+.sheet-bg{position:fixed;inset:0;z-index:50;background:rgba(10,12,14,.55);display:flex;align-items:flex-end;justify-content:center;
+  padding:0 var(--gutter-r) 0 var(--gutter-l)}
+.sheet{background:var(--surface);color:var(--ink);width:100%;max-width:440px;border-radius:16px 16px 0 0;border:1px solid var(--line);border-bottom:0;
+  padding:20px 20px calc(20px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:14px;max-height:90vh;overflow-y:auto}
+.sheet-top{display:flex;gap:14px;align-items:center}
+.sheet-top img{width:56px;height:56px;border-radius:13px;flex:none}
+.sheet h2{font-size:26px}
+.sheet p{margin:0;color:var(--muted)}
+.steps{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:10px;counter-reset:st}
+.steps li{display:grid;grid-template-columns:28px 1fr;gap:10px;align-items:start;counter-increment:st}
+.steps li::before{content:counter(st);width:28px;height:28px;border-radius:50%;background:var(--soft);border:1px solid var(--line);
+  display:grid;place-items:center;font-family:var(--display);font-weight:800;font-size:16px}
+.steps svg{width:18px;height:18px;vertical-align:-3px;margin:0 2px;stroke:var(--p-blue);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.steps b{font-weight:700}
+.sheet .go{font-size:24px;padding:14px}
+.sheet-actions{display:flex;gap:8px}
+.sheet-actions button{flex:1;background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:12px;font-weight:600}
+.linkbtn{background:none;border:0;padding:0;color:var(--p-blue);font-weight:600;text-decoration:underline;text-underline-offset:3px}
+@media (orientation: landscape) and (min-width: 560px){ .sheet-bg{align-items:center} .sheet{border-radius:16px;border-bottom:1px solid var(--line)} }
 @media (prefers-reduced-motion: reduce){.switch::after{transition:none}}
 </style>
 </head>
@@ -175,7 +196,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--p-blue);outline
     <div class="toggle"><span>Beeps<small>3-2-1 before each phase and round, and a long beep to start. Keeps playing with the screen locked.</small></span><button class="switch" id="soundSw" role="switch" aria-checked="true" aria-label="Beeps"></button></div>
     <div class="toggle"><span>Notifications<small id="notifNote">A banner when a new phase starts while the app is in the background.</small></span><button class="switch" id="notifSw" role="switch" aria-checked="false" aria-label="Notifications"></button></div>
     <button class="ghost" id="testBtn">Test beep</button>
-    <p class="hint" id="installHint" hidden></p>
+    <p class="hint" id="installHint" hidden>Not installed yet. <button class="linkbtn" id="installHow">How to install</button></p>
   </section>
 
   <button class="go" id="startBtn">Start class</button>
@@ -210,6 +231,22 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--p-blue);outline
     <div class="opts">
       <span>Brief and class warm-up wait for you to tap Next. Everything after runs on the clock.</span>
       <label><input type="checkbox" id="soundChk" checked> Beeps</label>
+    </div>
+  </div>
+</div>
+
+
+<div class="sheet-bg" id="installSheet" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="installTitle">
+    <div class="sheet-top">
+      <img src="icons/icon-192.png" alt="">
+      <div><h2 id="installTitle">Install Class Clock</h2><p>Put it on your home screen so it opens full screen, works offline and can beep and notify you during class.</p></div>
+    </div>
+    <ol class="steps" id="installSteps"></ol>
+    <button class="go" id="installNow" hidden>Install app</button>
+    <div class="sheet-actions">
+      <button id="installLater">Not now</button>
+      <button id="installNever">Don't show again</button>
     </div>
   </div>
 </div>
@@ -352,12 +389,7 @@ function renderAlerts(){
   if(!can) note.textContent = isIOS && !standalone ? "On iPhone, add the app to your Home Screen first, then turn this on." : "This browser doesn't support notifications.";
   else if(Notification.permission === "denied") note.textContent = "Notifications are blocked. Allow them for this app in your phone's settings.";
   else note.textContent = "A banner when a new phase starts while the app is in the background.";
-  const hint = $("installHint");
-  if(!standalone){
-    hint.hidden = false;
-    hint.textContent = isIOS ? "Install: tap the Share button in Safari, then Add to Home Screen."
-                             : "Install: open the browser menu and choose Install app or Add to Home screen.";
-  } else hint.hidden = true;
+  $("installHint").hidden = standalone || !(isMobile || deferredInstall);
 }
 $("soundSw").onclick = ()=>{ opts.sound = !opts.sound; saveOpts(); renderAlerts(); };
 $("soundChk").onchange = e=>{ opts.sound = e.target.checked; saveOpts(); renderAlerts(); if(run){ unlockAudio(); scheduleTrack(); } };
@@ -370,6 +402,60 @@ $("notifSw").onclick = async ()=>{
   if(opts.notify) notify("Notifications are on", "You'll get a banner when each phase starts.", true);
 };
 $("testBtn").onclick = ()=>{ unlockAudio(); playEvents([{t:0,k:"tick"},{t:1,k:"tick"},{t:2,k:"tick"},{t:3,k:"go"}], 5); };
+
+
+/* ---------- install popup ---------- */
+const isAndroid = /Android/i.test(navigator.userAgent);
+const isMobile = isIOS || isAndroid;
+let deferredInstall = null;
+const ICON = {
+  share:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M8 7l4-4 4 4"/><path d="M6 11H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-1"/></svg>',
+  plus:'<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M12 8v8M8 12h8"/></svg>',
+  dots:'<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="12" cy="19" r="1.2"/></svg>'
+};
+function installSteps(){
+  const ua = navigator.userAgent;
+  if(isIOS){
+    const notSafari = /CriOS|FxiOS|EdgiOS|GSA\//.test(ua);
+    return [
+      notSafari ? `Tap the Share button ${ICON.share} next to the address bar.`
+                : `Tap the Share button ${ICON.share} in Safari's toolbar (bottom of the screen on iPhone, top on iPad).`,
+      `Scroll down and tap <b>Add to Home Screen</b> ${ICON.plus}. If you don't see it, tap <b>Edit Actions</b> and add it.`,
+      `Tap <b>Add</b>, then open <b>Class Clock</b> from your home screen.`,
+      `In the app, turn on <b>Notifications</b> in the Alerts section.`
+    ];
+  }
+  if(deferredInstall) return [`Tap <b>Install app</b> below.`, `Open <b>Class Clock</b> from your home screen or app drawer.`];
+  return [
+    `Tap the browser menu ${ICON.dots} in the top corner.`,
+    `Tap <b>Install app</b> or <b>Add to Home screen</b>.`,
+    `Open <b>Class Clock</b> from your home screen.`
+  ];
+}
+function openInstall(){
+  $("installSteps").innerHTML = installSteps().map(x=>`<li><span>${x}</span></li>`).join("");
+  $("installNow").hidden = !deferredInstall;
+  $("installSheet").hidden = false;
+}
+function closeInstall(){ $("installSheet").hidden = true; }
+window.addEventListener("beforeinstallprompt", e=>{ e.preventDefault(); deferredInstall = e; renderAlerts(); if(!$("installSheet").hidden) openInstall(); });
+window.addEventListener("appinstalled", ()=>{ deferredInstall = null; closeInstall(); store.set("chc-install-dismissed", true); renderAlerts(); });
+$("installNow").onclick = async ()=>{
+  if(!deferredInstall) return;
+  deferredInstall.prompt();
+  try{ await deferredInstall.userChoice; }catch(e){}
+  deferredInstall = null; closeInstall(); renderAlerts();
+};
+$("installLater").onclick = ()=>{ try{ sessionStorage.setItem("chc-install-later","1"); }catch(e){} closeInstall(); };
+$("installNever").onclick = ()=>{ store.set("chc-install-dismissed", true); closeInstall(); };
+$("installSheet").addEventListener("click", e=>{ if(e.target.id==="installSheet") closeInstall(); });
+document.addEventListener("keydown", e=>{ if(e.key==="Escape" && !$("installSheet").hidden) closeInstall(); });
+$("installHow").onclick = openInstall;
+function maybeShowInstall(){
+  let later = false; try{ later = sessionStorage.getItem("chc-install-later")==="1"; }catch(e){}
+  if(standalone || !isMobile || later || store.get("chc-install-dismissed") || run) return;
+  setTimeout(()=>{ if(!run) openInstall(); }, 900);
+}
 
 /* ---------- sound ----------
    Beeps are rendered into one audio file that plays from now to the end of what is known.
@@ -675,6 +761,7 @@ function tick(){
 if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
 renderPlan(); renderAlerts();
 if(run){ showRun(); }
+maybeShowInstall();
 </script>
 </body>
 </html>
